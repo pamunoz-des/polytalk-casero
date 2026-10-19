@@ -80,39 +80,10 @@ voices/*
 *.key
 config/config.yaml*
 !config/config.yaml.example
-
-
-# PolyTalk Casero - archivos locales
-backups/
-*.bak
-*.bak-*
-*.bak2
-*.bak.*
-*.safetensors
-*.gguf
-*.ckpt
-*.pth
-*.pt
-*.onnx
-*.wav
-*.mp3
-*.flac
-
-# Modelos y caches descargados
-omnivoice/models/
-parakeet/models/
-**/models/cache/
-**/.cache/
-**/huggingface/
-
-# Voces personales
-voices/*
-!voices/.gitkeep
-
-# Configuracion local y credenciales
-*.pem
-*.p12
-*.pfx
-*.key
-config/config.yaml*
-!config/config.yaml.example
+# OmniVoice PRO - componentes externos sin licencia confirmada
+/omnivoice/app/
+/omnivoice/omnivoice/
+/omnivoice/download_models.py
+/omnivoice/README.md
+/omnivoice/requirements.txt
+/omnivoice/Dockerfile

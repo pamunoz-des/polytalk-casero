@@ -1,0 +1,234 @@
+diff --git a/omnivoice/cli/infer.py b/omnivoice/cli/infer.py
+index 2d903cc..ce4657d 100644
+--- a/omnivoice/cli/infer.py
++++ b/omnivoice/cli/infer.py
+@@ -53,14 +53,6 @@ def get_parser() -> argparse.ArgumentParser:
+         required=True,
+         help="Output WAV file path.",
+     )
+-    parser.add_argument(
+-        "--lora_adapter",
+-        type=str,
+-        default=None,
+-        help="Path to a LoRA adapter directory (e.g. a LoRA training "
+-        "checkpoint) to apply on top of --model. Merged in-memory before "
+-        "generation.",
+-    )
+     # Voice cloning
+     parser.add_argument(
+         "--ref_audio",
+@@ -130,12 +122,6 @@ def main():
+         args.model, device_map=device, dtype=torch.float16
+     )
+ 
+-    if args.lora_adapter:
+-        from omnivoice.utils.lora import load_lora_adapter
+-
+-        logging.info(f"Applying LoRA adapter from {args.lora_adapter} ...")
+-        model = load_lora_adapter(model, args.lora_adapter)
+-
+     logging.info(f"Generating audio for: {args.text[:80]}...")
+     audios = model.generate(
+         text=args.text,
+diff --git a/omnivoice/cli/infer_batch.py b/omnivoice/cli/infer_batch.py
+index 983cda3..186ad6b 100644
+--- a/omnivoice/cli/infer_batch.py
++++ b/omnivoice/cli/infer_batch.py
+@@ -141,13 +141,6 @@ def get_parser():
+         help="Fixed batch size (number of samples per batch). "
+         "If > 0, use fixed-size batching instead of duration-based batching.",
+     )
+-    parser.add_argument(
+-        "--enable_flashinfer",
+-        type=str2bool,
+-        default=False,
+-        help="Enable FlashInfer-accelerated decoding (sequence packing, fused "
+-        "kernels; see optimize.md). Requires the flashinfer-python package.",
+-    )
+     parser.add_argument(
+         "--warmup",
+         type=int,
+@@ -202,7 +195,7 @@ def get_parser():
+     return parser
+ 
+ 
+-def process_init(rank_queue, model_checkpoint, warmup=0, enable_flashinfer=False):
++def process_init(rank_queue, model_checkpoint, warmup=0):
+     """Initializer for each worker process.
+ 
+     Loads model (with tokenizers and duration estimator) onto a specific GPU
+@@ -236,14 +229,6 @@ def process_init(rank_queue, model_checkpoint, warmup=0, enable_flashinfer=False
+         dtype=torch.float16,
+     )
+ 
+-    # Opt-in flashinfer acceleration. Applied here because workers are
+-    # spawned processes: patching the model in the parent does not propagate.
+-    if enable_flashinfer:
+-        from omnivoice.models.omnivoice_flashinfer import apply_flashinfer
+-
+-        apply_flashinfer(worker_model)
+-        logging.info("flashinfer acceleration enabled")
+-
+     if warmup > 0:
+         logging.info(f"Running {warmup} warmup iterations on {worker_device}")
+         dummy_ref_audio = (
+@@ -483,7 +468,7 @@ def main():
+         with ProcessPoolExecutor(
+             max_workers=num_processes,
+             initializer=process_init,
+-            initargs=(rank_queue, args.model, args.warmup, args.enable_flashinfer),
++            initargs=(rank_queue, args.model, args.warmup),
+         ) as executor:
+             futures = []
+ 
+diff --git a/omnivoice/models/omnivoice.py b/omnivoice/models/omnivoice.py
+index 96effb1..293e2c7 100644
+--- a/omnivoice/models/omnivoice.py
++++ b/omnivoice/models/omnivoice.py
+@@ -281,8 +281,9 @@ class OmniVoice(PreTrainedModel):
+     _supports_sdpa = True
+     config_class = OmniVoiceConfig
+ 
+-    def __init__(self, config: OmniVoiceConfig, llm: Optional[PreTrainedModel] = None):
+-        super().__init__(config)
++    def __init__(self, config: OmniVoiceConfig, llm: Optional[PreTrainedModel] = None, **kwargs):
++        device = kwargs.pop("device", None)
++        super().__init__(config, **kwargs)
+ 
+         if llm is not None:
+             # If an LLM instance is provided, use it directly
+@@ -898,9 +899,10 @@ class OmniVoice(PreTrainedModel):
+         if ref_rms is not None and ref_rms < 0.1:
+             generated_audio = generated_audio * ref_rms / 0.1
+         elif ref_rms is None:
+-            peak = np.abs(generated_audio).max()
+-            if peak > 1e-6:
+-                generated_audio = generated_audio / peak * 0.5
++            if generated_audio.size > 0:
++                peak = np.abs(generated_audio).max()
++                if peak > 1e-6:
++                    generated_audio = generated_audio / peak * 0.5
+ 
+         generated_audio = fade_and_pad_audio(
+             generated_audio,
+diff --git a/omnivoice/scripts/denoise_audio.py b/omnivoice/scripts/denoise_audio.py
+index fdf9319..d46f987 100644
+--- a/omnivoice/scripts/denoise_audio.py
++++ b/omnivoice/scripts/denoise_audio.py
+@@ -421,12 +421,12 @@ class SpeechDenoisingProcessor:
+ 
+     @torch.inference_mode()
+     def process(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
+-        return self.process_batch(torch.unsqueeze(waveform, dim=0), [sample_rate])[0]
++        return self.process_batch([waveform], [sample_rate])[0]
+ 
+     @torch.inference_mode()
+     def process_batch(
+         self,
+-        waveforms: torch.Tensor,
++        waveforms: Sequence[torch.Tensor] | torch.Tensor,
+         sample_rates: Optional[Sequence[int]] = None,
+         expected_lengths: Optional[Sequence[int]] = None,
+     ) -> List[torch.Tensor]:
+diff --git a/omnivoice/training/builder.py b/omnivoice/training/builder.py
+index 72c50ff..6a33431 100644
+--- a/omnivoice/training/builder.py
++++ b/omnivoice/training/builder.py
+@@ -33,7 +33,6 @@ Key functions:
+ """
+ 
+ import logging
+-import os
+ from functools import partial
+ from typing import Tuple
+ 
+@@ -126,37 +125,9 @@ def build_model_and_tokenizer(
+     model.config.bos_token_id = tokenizer.bos_token_id
+     model.config.eos_token_id = tokenizer.eos_token_id
+ 
+-    # 5. Wrap with LoRA adapters (optional)
+-    if config.use_lora:
+-        model = _apply_lora(model, config)
+-
+     return model, tokenizer
+ 
+ 
+-def _apply_lora(model: OmniVoice, config: TrainingConfig) -> OmniVoice:
+-    """Wrap the model with PEFT LoRA adapters.
+-
+-    ``lora_target_modules`` (LLM attention/MLP projections) are trained as
+-    low-rank adapters; ``lora_modules_to_save`` (the audio embedding and
+-    output head) are OmniVoice-specific I/O layers with no LLM-pretrained
+-    knowledge to preserve, so they are kept fully trainable instead.
+-    """
+-    from peft import LoraConfig, get_peft_model
+-
+-    lora_config = LoraConfig(
+-        r=config.lora_r,
+-        lora_alpha=config.lora_alpha,
+-        lora_dropout=config.lora_dropout,
+-        bias=config.lora_bias,
+-        target_modules=config.lora_target_modules,
+-        modules_to_save=config.lora_modules_to_save,
+-    )
+-    model = get_peft_model(model, lora_config)
+-    if int(os.environ.get("LOCAL_RANK", "0")) == 0:
+-        model.print_trainable_parameters()
+-    return model
+-
+-
+ def build_dataloaders(
+     config: TrainingConfig, tokenizer: AutoTokenizer
+ ) -> Tuple[DataLoader, DataLoader]:
+diff --git a/omnivoice/training/config.py b/omnivoice/training/config.py
+index 9756451..49cd880 100644
+--- a/omnivoice/training/config.py
++++ b/omnivoice/training/config.py
+@@ -55,30 +55,6 @@ class TrainingConfig:
+     resume_from_checkpoint: Optional[str] = None
+     init_from_checkpoint: Optional[str] = None
+ 
+-    # LoRA (PEFT) Settings
+-    use_lora: bool = False
+-    lora_r: int = 16
+-    lora_alpha: int = 32
+-    lora_dropout: float = 0.05
+-    lora_bias: str = "none"
+-    lora_target_modules: List[str] = field(
+-        default_factory=lambda: [
+-            "q_proj",
+-            "k_proj",
+-            "v_proj",
+-            "o_proj",
+-            "gate_proj",
+-            "up_proj",
+-            "down_proj",
+-        ]
+-    )
+-    # Non-LLM modules trained in full rather than via low-rank adapters,
+-    # since they are OmniVoice-specific audio I/O layers, not general LLM
+-    # knowledge, and are small relative to the LLM backbone.
+-    lora_modules_to_save: List[str] = field(
+-        default_factory=lambda: ["audio_embeddings", "audio_heads"]
+-    )
+-
+     # Training Hyperparams
+     learning_rate: float = 1e-4
+     weight_decay: float = 0.01
+diff --git a/omnivoice/training/trainer.py b/omnivoice/training/trainer.py
+index 9ea53e6..ec015be 100644
+--- a/omnivoice/training/trainer.py
++++ b/omnivoice/training/trainer.py
+@@ -164,11 +164,8 @@ class OmniTrainer:
+ 
+     def create_optimizer_and_scheduler(self):
+         """Default AdamW + configurable LR Scheduler."""
+-        # Only trainable parameters (all of them for full fine-tuning; LoRA
+-        # adapters + modules_to_save when config.use_lora froze the rest).
+-        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+         optimizer = torch.optim.AdamW(
+-            trainable_params,
++            self.model.parameters(),
+             lr=self.config.learning_rate,
+             weight_decay=self.config.weight_decay,
+         )
