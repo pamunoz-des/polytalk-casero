@@ -19,6 +19,7 @@ from fastapi import (
 )
 
 from ..services.pipeline_service import TranslationPipelineService
+from ..services.whisper_service import WhisperService
 from ..services.visual_context_service import VisualContextService
 from ..utils.config import get_custom_instruction_max_chars
 from ..utils.logger import get_logger
@@ -97,6 +98,8 @@ async def websocket_translate(
     source_language: str = "en",
     target_language: str = "gu",
     mode: str = "live",
+    stt_engine: str = "parakeet",
+    tts_engine: str = "xtts",
     custom_instruction: str | None = None,
 ):
     """
@@ -121,7 +124,42 @@ async def websocket_translate(
         await websocket.close()
         return
 
+    if stt_engine not in {"whisper", "parakeet"}:
+        await websocket.send_json(
+            {"type": "error", "error": "Unsupported STT engine"}
+        )
+        await websocket.close()
+        return
+
+    if stt_engine == "parakeet" and mode == "conversation":
+        await websocket.send_json(
+            {
+                "type": "error",
+                "error": "Parakeet STT is not available in conversation mode",
+            }
+        )
+        await websocket.close()
+        return
+
+    if tts_engine not in {"auto", "xtts", "omnivoice", "supertonic", "piper"}:
+        await websocket.send_json(
+            {"type": "error", "error": "Unsupported TTS engine"}
+        )
+        await websocket.close()
+        return
+
     pipeline = get_pipeline_service()
+
+    if stt_engine == "parakeet":
+        parakeet_service = WhisperService()
+        parakeet_service.base_url = "http://parakeet:8000"
+        parakeet_service.ws_endpoint = "/v1/stream/transcriptions"
+        pipeline = TranslationPipelineService(
+            whisper_service=parakeet_service,
+            warm_connections=False,
+            confirmed_transcripts_only=True,
+        )
+        logger.info("Using NVIDIA Parakeet STT for this session")
     audio_chunks = []
     client_disconnected = False
     pause_event = asyncio.Event()
@@ -343,6 +381,7 @@ async def websocket_translate(
             visual_context_queue=visual_context_queue,
             custom_instruction=sanitize_custom_instruction(custom_instruction),
             custom_instruction_queue=custom_instruction_queue,
+            tts_engine=tts_engine,
         ):
             if client_disconnected:
                 logger.info("Client disconnected, stopping pipeline")
@@ -368,6 +407,13 @@ async def websocket_translate(
                 pass
 
     finally:
+        if stt_engine == "parakeet":
+            try:
+                await pipeline.close()
+                logger.info("Parakeet session pipeline closed")
+            except Exception as close_error:
+                logger.warning(f"Error closing Parakeet pipeline: {close_error}")
+
         connection_duration = time.time() - connection_start
         logger.info(f"WebSocket connection closed after {connection_duration:.2f}s")
 

@@ -1,0 +1,20 @@
+﻿services:
+  parakeet:
+    build:
+      context: ./parakeet
+      dockerfile: Dockerfile
+    image: polytalk-parakeet:latest
+    container_name: polytalk-parakeet
+    restart: unless-stopped
+    gpus: all
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      - PARAKEET_MODEL=nvidia/parakeet-tdt-0.6b-v3
+      - HF_HOME=/models/cache
+      - NEMO_CACHE_DIR=/models/cache
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./parakeet/models:/models
+    networks:
+      - polytalk-network

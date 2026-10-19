@@ -45,3 +45,74 @@ piper/
 media/
 config/config.yaml
 .codex/config.toml
+
+# PolyTalk Casero - archivos locales
+backups/
+*.bak
+*.bak-*
+*.bak2
+*.bak.*
+*.safetensors
+*.gguf
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.wav
+*.mp3
+*.flac
+
+# Modelos y caches descargados
+omnivoice/models/
+parakeet/models/
+**/models/cache/
+**/.cache/
+**/huggingface/
+
+# Voces personales
+voices/*
+!voices/.gitkeep
+
+# Configuracion local y credenciales
+*.pem
+*.p12
+*.pfx
+*.key
+config/config.yaml*
+!config/config.yaml.example
+
+
+# PolyTalk Casero - archivos locales
+backups/
+*.bak
+*.bak-*
+*.bak2
+*.bak.*
+*.safetensors
+*.gguf
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.wav
+*.mp3
+*.flac
+
+# Modelos y caches descargados
+omnivoice/models/
+parakeet/models/
+**/models/cache/
+**/.cache/
+**/huggingface/
+
+# Voces personales
+voices/*
+!voices/.gitkeep
+
+# Configuracion local y credenciales
+*.pem
+*.p12
+*.pfx
+*.key
+config/config.yaml*
+!config/config.yaml.example

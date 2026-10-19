@@ -1,0 +1,7 @@
+﻿services:
+  polytalk:
+    volumes:
+      - type: bind
+        source: ./voices
+        target: /app/voices
+        read_only: true

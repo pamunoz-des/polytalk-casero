@@ -71,7 +71,7 @@ class TTSService(BaseTTSService):
         )
 
     async def synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
     ) -> TTSResult:
         """
         Synthesize speech from text.
@@ -93,18 +93,28 @@ class TTSService(BaseTTSService):
             return await self._mock_synthesize(text, language, output_path)
 
         try:
-            provider = self._get_provider_for_language(language)
+            provider = (
+                provider_override
+                if provider_override and provider_override != "auto"
+                else self._get_provider_for_language(language)
+            )
+            if provider not in {"piper", "supertonic", "xtts", "omnivoice"}:
+                return TTSResult(success=False, error=f"Unsupported TTS provider: {provider}")
             if provider == "piper":
                 return await self._piper_synthesize(text, language, output_path)
             if provider == "supertonic":
                 return await self._supertonic_synthesize(text, language, output_path)
+            if provider == "xtts":
+                return await self._xtts_synthesize(text, language, output_path)
+            if provider == "omnivoice":
+                return await self._omnivoice_synthesize(text, language, output_path)
             return await self._openai_synthesize(text, language, output_path)
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
             return TTSResult(success=False, error=str(e))
 
     async def _mock_synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
     ) -> TTSResult:
         """
         Generate mock TTS audio for testing.
@@ -335,7 +345,7 @@ class TTSService(BaseTTSService):
         return float(self.config.get("length_scale", 0.9))
 
     async def _piper_synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
     ) -> TTSResult:
         """
         Synthesize speech using Piper TTS API.
@@ -401,7 +411,7 @@ class TTSService(BaseTTSService):
         )
 
     async def _supertonic_synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
     ) -> TTSResult:
         """Synthesize speech using a Supertonic TTS HTTP server."""
         provider_config = self._get_provider_config("supertonic")
@@ -457,8 +467,159 @@ class TTSService(BaseTTSService):
                 error=f"Supertonic TTS HTTP error: {e}",
             )
 
+    async def _xtts_synthesize(
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
+    ) -> TTSResult:
+        """Generate cloned-voice WAV audio using the local XTTS HTTP service."""
+        _, lang_base = self._normalize_language(language)
+        url = self._get_provider_base_url("xtts") + "/synthesize"
+        payload = {
+            "text": text,
+            "language": lang_base,
+            "temperature": 0.65,
+            "speed": 1.0,
+        }
+
+        try:
+            # XTTS returns a complete WAV; stream it to disk to avoid buffering
+            # an extra copy in PolyTalk's process.
+            async with self._http_client.stream("POST", url, json=payload) as response:
+                response.raise_for_status()
+                if output_path is None:
+                    unique_id = str(uuid.uuid4())[:8]
+                    output_path = self.media_dir / f"tts_xtts_{lang_base}_{unique_id}.wav"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with open(output_path, "wb") as f:
+                    async for chunk in response.aiter_bytes():
+                        if chunk:
+                            f.write(chunk)
+
+                audio_url = f"/media/output/{output_path.name}"
+                logger.info(
+                    f"XTTS generated: {output_path} "
+                    f"(language: {lang_base}, "
+                    f"generation: {response.headers.get('X-Generation-Time', 'n/a')}s)"
+                )
+                return TTSResult(
+                    audio_path=output_path,
+                    audio_url=audio_url,
+                    success=True,
+                )
+        except httpx.HTTPError as e:
+            logger.error(f"XTTS HTTP error: {e}")
+            return TTSResult(success=False, error=f"XTTS HTTP error: {e}")
+
+    async def _omnivoice_synthesize(
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
+    ) -> TTSResult:
+        """Generate WAV audio using OmniVoice PRO."""
+        _, lang_base = self._normalize_language(language)
+        base_url = self._get_provider_base_url("omnivoice").rstrip("/")
+
+        payload = {
+            "text": text,
+            "language": lang_base,
+            "model_choice": "omnivoice",
+            "speed": "1.0",
+            "auto_enrich": "false",
+        }
+
+        try:
+            ref_audio = Path("/app/voices/mi_voz_ref.wav")
+            ref_text_file = Path("/app/voices/mi_voz_ref.txt")
+
+            if not ref_audio.is_file() or not ref_text_file.is_file():
+                raise ValueError("OmniVoice voice reference files not found")
+
+            ref_text = ref_text_file.read_text(encoding="utf-8").strip()
+            if not ref_text:
+                raise ValueError("OmniVoice reference transcription is empty")
+
+            payload["ref_text"] = ref_text
+
+            with ref_audio.open("rb") as voice_file:
+                response = await self._http_client.post(
+                    base_url + "/api/synthesize",
+                    data=payload,
+                    files={
+                        "ref_audio": (
+                            ref_audio.name,
+                            voice_file,
+                            "audio/wav",
+                        )
+                    },
+                    timeout=120.0,
+                )
+            response.raise_for_status()
+            result = response.json()
+
+            if not result.get("success"):
+                raise ValueError(
+                    f"OmniVoice synthesis failed: {result}"
+                )
+
+            remote_audio_url = result.get("audio_url", "")
+
+            # Only accept audio files served by OmniVoice.
+            if (
+                not remote_audio_url.startswith("/api/audio/")
+                or "/" in remote_audio_url[len("/api/audio/"):]
+                or "\\" in remote_audio_url
+                or ".." in remote_audio_url
+            ):
+                raise ValueError("Invalid OmniVoice audio URL")
+
+            if output_path is None:
+                unique_id = str(uuid.uuid4())[:8]
+                output_path = (
+                    self.media_dir
+                    / f"tts_omnivoice_{lang_base}_{unique_id}.wav"
+                )
+
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Download generated WAV from OmniVoice.
+            async with self._http_client.stream(
+                "GET",
+                base_url + remote_audio_url,
+                timeout=60.0,
+            ) as audio_response:
+                audio_response.raise_for_status()
+
+                with open(output_path, "wb") as audio_file:
+                    async for chunk in audio_response.aiter_bytes():
+                        if chunk:
+                            audio_file.write(chunk)
+
+            # Validate that a WAV file was actually returned.
+            with open(output_path, "rb") as audio_file:
+                if audio_file.read(4) != b"RIFF":
+                    raise ValueError("OmniVoice returned invalid WAV audio")
+
+            audio_url = f"/media/output/{output_path.name}"
+
+            logger.info(
+                f"OmniVoice generated: {output_path} "
+                f"(language={lang_base})"
+            )
+
+            return TTSResult(
+                audio_path=output_path,
+                audio_url=audio_url,
+                duration=result.get("duration_seconds"),
+                success=True,
+            )
+
+        except (httpx.HTTPError, ValueError, OSError) as e:
+            logger.exception(f"OmniVoice TTS error [{type(e).__name__}]: {e!r}")
+            return TTSResult(
+                success=False,
+                error=f"OmniVoice TTS error: {e}",
+            )
     async def _openai_synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
     ) -> TTSResult:
         """
         Synthesize speech using OpenAI TTS API.

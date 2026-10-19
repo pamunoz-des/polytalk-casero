@@ -47,7 +47,7 @@
                             <option value="et">Estonian</option>
                             <option value="fi">Finnish</option>
                             <option value="fr">French</option>
-                            <option value="de" selected>German</option>
+                            <option value="de">German</option>
                             <option value="el">Greek</option>
                             <option value="gu">Gujarati</option>
                             <option value="hi">Hindi</option>
@@ -65,7 +65,7 @@
                             <option value="ru">Russian</option>
                             <option value="sk">Slovak</option>
                             <option value="sl">Slovenian</option>
-                            <option value="es">Spanish</option>
+                            <option value="es" selected>Spanish</option>
                             <option value="es_MX">Spanish (Mexico)</option>
                             <option value="sv">Swedish</option>
                             <option value="tr">Turkish</option>
@@ -224,6 +224,31 @@
                             </select>
                         </div>
                         <p class="settings-note">Choose the language used for PolyTalk controls and messages.</p>
+                    </div>
+                    <div class="settings-section">
+                        <h3>Speech Recognition Engine</h3>
+                        <div class="settings-field">
+                            <label for="stt-engine-select">Motor de reconocimiento de voz</label>
+                            <select id="stt-engine-select">
+                                <option value="whisper">Faster-Whisper (CPU)</option>
+                                <option value="parakeet" selected>NVIDIA Parakeet v3 (GPU)</option>
+                            </select>
+                        </div>
+                        <p class="settings-note">Selecciona el motor STT para la siguiente sesión de traducción.</p>
+                    </div>
+                                        <div class="settings-section">
+                        <h3>Speech Synthesis Engine</h3>
+                        <div class="settings-field">
+                            <label for="tts-engine-select">Motor de síntesis de voz (TTS)</label>
+                            <select id="tts-engine-select">
+                                <option value="auto">Automático (según idioma)</option>
+                                <option value="xtts" selected>XTTS (voz clonada)</option>
+                                <option value="omnivoice">OmniVoice PRO</option>
+                                <option value="supertonic">Supertonic</option>
+                                <option value="piper">Piper</option>
+                            </select>
+                        </div>
+                        <p class="settings-note">Selecciona el motor de voz para la siguiente sesión de traducción. La disponibilidad depende del idioma.</p>
                     </div>
                     <div class="settings-section">
                         <h3>Audio Input Device</h3>

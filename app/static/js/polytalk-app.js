@@ -433,6 +433,7 @@ class PolyTalkApp {
     saveSettings() {
         const inputDeviceId = this.inputDeviceSelect?.value || 'default';
         const outputDeviceId = this.outputDeviceSelect?.value || 'default';
+
         const customInstruction = this.getCustomInstruction();
         if (this.customInstructionInput) {
             this.customInstructionInput.value = customInstruction;
@@ -442,6 +443,8 @@ class PolyTalkApp {
         localStorage.setItem('polytalk_input_device', inputDeviceId);
         localStorage.setItem('polytalk_output_device', outputDeviceId);
         localStorage.setItem('polytalk_custom_instruction', customInstruction);
+        const ttsEngine = document.getElementById('tts-engine-select')?.value || 'xtts';
+        localStorage.setItem('polytalk_tts_engine', ttsEngine);
 
         this.audioRecorder.selectedDeviceId = inputDeviceId;
         this.audioRecorder.setOutputDeviceId(outputDeviceId);
@@ -463,6 +466,11 @@ class PolyTalkApp {
         const savedInputDevice = localStorage.getItem('polytalk_input_device');
         const savedOutputDevice = localStorage.getItem('polytalk_output_device');
         this.loadSavedCustomInstruction();
+        const ttsEngineSelect = document.getElementById('tts-engine-select');
+        const savedTtsEngine = localStorage.getItem('polytalk_tts_engine') || 'xtts';
+        if (ttsEngineSelect && Array.from(ttsEngineSelect.options).some(option => option.value === savedTtsEngine)) {
+            ttsEngineSelect.value = savedTtsEngine;
+        }
 
         if (savedInputDevice) {
             this.audioRecorder.selectedDeviceId = savedInputDevice;
@@ -567,6 +575,13 @@ class PolyTalkApp {
             target_language: targetLang,
             mode
         });
+        const sttEngine = document.getElementById('stt-engine-select')?.value === 'parakeet'
+            ? 'parakeet'
+            : 'parakeet';
+        params.set('stt_engine', sttEngine);
+        const ttsEngine = localStorage.getItem('polytalk_tts_engine') || 'xtts';
+        params.set('tts_engine', ttsEngine);
+
         const customInstruction = this.getCustomInstruction();
         if (customInstruction) {
             params.set('custom_instruction', customInstruction);

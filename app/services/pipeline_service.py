@@ -96,6 +96,7 @@ class TranslationPipelineService:
         translation_service: Optional[TranslationService] = None,
         tts_service: Optional[TTSService] = None,
         warm_connections: bool = True,
+        confirmed_transcripts_only: bool = False,
     ) -> None:
         """
         Initialize the translation pipeline.
@@ -106,6 +107,7 @@ class TranslationPipelineService:
             tts_service: Optional TTS service instance
             warm_connections: Whether to pre-warm connections (default: True)
         """
+        self.confirmed_transcripts_only = confirmed_transcripts_only
         self.whisper = whisper_service or WhisperService()
         self.translation = translation_service or TranslationService()
         self.tts = tts_service or TTSService()
@@ -155,7 +157,7 @@ class TranslationPipelineService:
         await self._warm_connections()
 
     async def _synthesize(
-        self, text: str, language: str, save_media: bool
+        self, text: str, language: str, save_media: bool, tts_engine: str = "auto"
     ) -> TTSResult:
         """
         Synthesize speech from text.
@@ -177,7 +179,7 @@ class TranslationPipelineService:
         else:
             output_path = None
 
-        return await self.tts.synthesize(text, language, output_path)
+        return await self.tts.synthesize(text, language, output_path, provider_override=tts_engine)
 
     async def _warm_connections(self) -> None:
         """
@@ -317,6 +319,7 @@ class TranslationPipelineService:
         visual_context_queue: Optional[asyncio.Queue] = None,
         custom_instruction: Optional[str] = None,
         custom_instruction_queue: Optional[asyncio.Queue] = None,
+        tts_engine: str = "auto",
     ) -> AsyncGenerator[dict, None]:
         """Process pause-delimited bidirectional conversation turns."""
         logger.info(
@@ -434,7 +437,7 @@ class TranslationPipelineService:
                 }
 
                 tts_result = await self._synthesize(
-                    result.text, turn_target, save_media=False
+                    result.text, turn_target, save_media=False, tts_engine=tts_engine
                 )
                 if tts_result.success:
                     yield {
@@ -467,6 +470,7 @@ class TranslationPipelineService:
         mode: str = "live",
         custom_instruction: Optional[str] = None,
         custom_instruction_queue: Optional[asyncio.Queue] = None,
+        tts_engine: str = "auto",
     ) -> AsyncGenerator[dict, None]:
         """
         Process streaming audio with the real-time translation pipeline.
@@ -507,6 +511,7 @@ class TranslationPipelineService:
                 visual_context_queue=visual_context_queue,
                 custom_instruction=custom_instruction,
                 custom_instruction_queue=custom_instruction_queue,
+                tts_engine=tts_engine,
             ):
                 yield result
             return
@@ -646,6 +651,7 @@ class TranslationPipelineService:
                             translated_sentence.text,
                             target_lang,
                             save_media=False,
+                            tts_engine=tts_engine,
                         )
 
                         if tts_result.success:
@@ -986,6 +992,10 @@ class TranslationPipelineService:
                         f"ASR: len={len(current_text)}, last_len={len(last_transcribed_text)}, "
                         f"text='{current_text[:100]}...'"
                     )
+
+                    # Parakeet: translate only confirmed utterances.
+                    if self.confirmed_transcripts_only and not is_pause_flush:
+                        continue
 
                     # STT emits cumulative text, so translate only the new delta.
                     text_to_translate = self._extract_new_transcript_text(

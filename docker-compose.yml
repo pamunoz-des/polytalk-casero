@@ -1,4 +1,25 @@
 services:
+  xtts:
+    image: xtts-local:latest
+    container_name: polytalk-xtts
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8020:8020"
+    environment:
+      - COQUI_TOS_AGREED=1
+    volumes:
+      - ../xtts/voces:/app/voces:ro
+      - ../xtts/salida:/app/salida
+      - xtts-cache:/root/.local/share/tts
+    networks:
+      - polytalk-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   stt:
     build:
       context: ./stt
@@ -162,6 +183,7 @@ services:
 volumes:
   stt_data:
   supertonic_data:
+  xtts-cache:
 
 networks:
   polytalk-network:

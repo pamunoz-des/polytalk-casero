@@ -174,6 +174,7 @@ class WhisperService(BaseTranscriptionService):
                 result_queue = asyncio.Queue()
                 send_done = asyncio.Event()
                 recv_done = asyncio.Event()
+                flush_ack_received = asyncio.Event()
                 send_task = None
                 recv_task = None
 
@@ -184,6 +185,18 @@ class WhisperService(BaseTranscriptionService):
                         async for audio_chunk in audio_generator:
                             # Check for end signal marker
                             if audio_chunk == b"__END_SIGNAL__":
+                                if "parakeet" in self.base_url.lower():
+                                    await ws.send(json.dumps({"type": "flush"}))
+                                    logger.info("Parakeet flush requested before closing")
+                                    try:
+                                        await asyncio.wait_for(
+                                            flush_ack_received.wait(),
+                                            timeout=10.0,
+                                        )
+                                    except asyncio.TimeoutError:
+                                        logger.warning(
+                                            "Parakeet flush acknowledgement timed out"
+                                        )
                                 logger.info(
                                     "Received end signal from audio generator, closing WebSocket"
                                 )
@@ -215,6 +228,11 @@ class WhisperService(BaseTranscriptionService):
                         while True:
                             response = await ws.recv()
                             result_data = json.loads(response)
+
+                            if result_data.get("type") == "flush_ack":
+                                flush_ack_received.set()
+                                logger.info("Parakeet flush acknowledged")
+                                continue
 
                             if result_data.get("type") == "emit_policy_ack":
                                 logger.debug(
@@ -269,7 +287,7 @@ class WhisperService(BaseTranscriptionService):
 
                 # Collect results from queue
                 try:
-                    while not (send_done.is_set() and recv_done.is_set()):
+                    while not (send_done.is_set() and recv_done.is_set() and result_queue.empty()):
                         try:
                             item = await asyncio.wait_for(
                                 result_queue.get(), timeout=1.0
