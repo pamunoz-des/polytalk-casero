@@ -1,3 +1,5 @@
+import re
+from fastapi import Request
 # SPDX-FileCopyrightText: 2026 BizzAppDev Systems Pvt. Ltd.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -8,12 +10,17 @@ Provides REST endpoints for audio translation.
 """
 
 import asyncio
+from pathlib import Path
 import json
 import time
 from typing import Optional, AsyncGenerator
 
 from fastapi import (
     APIRouter,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -77,6 +84,115 @@ def should_start_visual_context_request(
     return bool(image_data_url) and not (in_flight or ready)
 
 
+
+
+@router.post("/voices/custom/create")
+async def create_omnivoice_profile(
+    name: str = Form(...),
+    audio_file: UploadFile = File(...),
+):
+    """Create an authorized voice profile in OmniVoice."""
+    import httpx
+
+    nombre = name.strip()
+
+    if not nombre or len(nombre) > 80:
+        raise HTTPException(
+            status_code=400,
+            detail="El nombre debe tener entre 1 y 80 caracteres.",
+        )
+
+    formatos = {
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".webm": "audio/webm",
+        ".m4a": "audio/mp4",
+    }
+
+    extension = Path(audio_file.filename or "").suffix.lower()
+
+    if extension not in formatos:
+        raise HTTPException(
+            status_code=400,
+            detail="Formato no permitido. Usa WAV, MP3, OGG, WEBM o M4A.",
+        )
+
+    limite = 20 * 1024 * 1024
+    contenido = await audio_file.read(limite + 1)
+
+    if not contenido:
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo de audio esta vacio.",
+        )
+
+    if len(contenido) > limite:
+        raise HTTPException(
+            status_code=413,
+            detail="El archivo supera el limite de 20 MB.",
+        )
+
+    url = "http://polytalk-omnivoice:7860/api/voices/custom/create"
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            respuesta = await client.post(
+                url,
+                data={
+                    "name": nombre,
+                    "add_to_my_voices": "true",
+                },
+                files={
+                    "audio_file": (
+                        audio_file.filename,
+                        contenido,
+                        formatos[extension],
+                    )
+                },
+            )
+
+        if respuesta.status_code >= 400:
+            logger.warning(
+                "OmniVoice rejected voice creation: HTTP %s",
+                respuesta.status_code,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="OmniVoice no pudo crear el perfil de voz.",
+            )
+
+        return respuesta.json()
+
+    except httpx.HTTPError:
+        logger.exception("OmniVoice voice creation failed")
+        raise HTTPException(
+            status_code=502,
+            detail="No se pudo conectar con OmniVoice.",
+        )
+
+
+@router.get("/voices/my-list")
+async def list_omnivoice_voices():
+    """List saved OmniVoice profiles."""
+    import httpx
+    from fastapi import HTTPException
+
+    url = "http://polytalk-omnivoice:7860/api/voices/my-list"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError:
+        logger.exception("Failed to retrieve OmniVoice profiles")
+        raise HTTPException(
+            status_code=502,
+            detail="OmniVoice service unavailable",
+        )
+
+
 @router.get("/health")
 async def health_check() -> dict:
     """
@@ -100,7 +216,9 @@ async def websocket_translate(
     mode: str = "live",
     stt_engine: str = "parakeet",
     tts_engine: str = "xtts",
+    tts_enabled: bool = True,
     custom_instruction: str | None = None,
+    voice_id: str | None = None,
 ):
     """
     WebSocket endpoint for real-time audio translation streaming (2-thread pipeline).
@@ -371,6 +489,13 @@ async def websocket_translate(
                 "Pipeline ready with warnings",
             )
 
+        if voice_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", voice_id):
+            await websocket.close(code=1008, reason="Invalid voice profile identifier")
+            return
+
+        if tts_engine != "omnivoice":
+            voice_id = None
+
         async for result in pipeline.process_streaming(
             audio_gen,
             source_language,
@@ -382,6 +507,8 @@ async def websocket_translate(
             custom_instruction=sanitize_custom_instruction(custom_instruction),
             custom_instruction_queue=custom_instruction_queue,
             tts_engine=tts_engine,
+            tts_enabled=tts_enabled,
+            voice_id=voice_id,
         ):
             if client_disconnected:
                 logger.info("Client disconnected, stopping pipeline")
@@ -432,3 +559,213 @@ async def websocket_translate(
                 await websocket.close()
             except Exception:
                 pass
+
+
+# POLYTALK OMNIVOICE AUDIO PROXY 619
+@router.get("/audio/{filename}")
+async def omnivoice_generated_audio(filename: str):
+    import re
+    import httpx
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]+\.wav", filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Nombre de archivo de audio no valido"
+        )
+
+    url = (
+        "http://polytalk-omnivoice:7860/api/audio/"
+        + filename
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resultado = await client.get(url)
+            resultado.raise_for_status()
+
+        return Response(
+            content=resultado.content,
+            media_type="audio/wav",
+            headers={"Cache-Control": "no-store"}
+        )
+
+    except httpx.HTTPStatusError as error:
+        raise HTTPException(
+            status_code=error.response.status_code,
+            detail="Audio no disponible en OmniVoice"
+        )
+
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=502,
+            detail="No fue posible conectar con OmniVoice"
+        )
+
+
+
+# POLYTALK OMNIVOICE SYNTHESIS PROXY 622
+@router.post("/voices/synthesize")
+async def polytalk_omnivoice_synthesize(request: Request):
+    import httpx
+    from fastapi import HTTPException
+
+    datos = await request.json()
+
+    texto = str(datos.get("text", "")).strip()
+    voice_id = str(datos.get("voice_id", "")).strip()
+    language = datos.get("language", "es")
+
+    if not isinstance(language, str):
+        raise HTTPException(
+            status_code=400,
+            detail="Idioma invalido"
+        )
+
+    language = language.strip()
+
+    if not language or len(language) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Idioma invalido"
+        )
+
+    if not texto or len(texto) > 500:
+        raise HTTPException(
+            status_code=400,
+            detail="El texto debe contener entre 1 y 500 caracteres"
+        )
+
+    if not voice_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Selecciona un perfil de voz"
+        )
+
+    payload = {
+        "text": texto,
+        "language": language,
+        "model_choice": "omnivoice",
+        "voice_id": voice_id,
+        "speed": "1.0"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            respuesta = await client.post(
+                "http://polytalk-omnivoice:7860/api/synthesize",
+                data=payload
+            )
+
+        respuesta.raise_for_status()
+        resultado = respuesta.json()
+
+        if not resultado.get("success"):
+            raise HTTPException(
+                status_code=502,
+                detail="OmniVoice no pudo generar el audio"
+            )
+
+        audio_url = resultado.get("audio_url", "")
+
+        if not (
+            isinstance(audio_url, str)
+            and audio_url.startswith("/api/audio/")
+            and audio_url.endswith(".wav")
+        ):
+            raise HTTPException(
+                status_code=502,
+                detail="OmniVoice devolvio una ruta de audio invalida"
+            )
+
+        return {
+            "success": True,
+            "audio_url": audio_url,
+            "duration_seconds": resultado.get("duration_seconds"),
+            "voice_id": voice_id
+        }
+
+    except httpx.HTTPStatusError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="Error de sintesis en OmniVoice: "
+                   + str(error.response.status_code)
+        )
+
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=502,
+            detail="No fue posible conectar con OmniVoice"
+        )
+
+
+# POLYTALK TEXT TRANSLATION V1
+@router.post("/text/translate")
+async def polytalk_text_translate(request: Request):
+    from fastapi import HTTPException
+    from app.services.translation_service import TranslationService
+
+    try:
+        datos = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON invalido")
+
+    if not isinstance(datos, dict):
+        raise HTTPException(status_code=400, detail="JSON invalido")
+
+    texto = datos.get("text", "")
+    origen = datos.get("source_language", "es")
+    destino = datos.get("target_language", "en")
+
+    if not all(isinstance(x, str) for x in (texto, origen, destino)):
+        raise HTTPException(status_code=400, detail="Campos invalidos")
+
+    texto = texto.strip()
+    origen = origen.strip()
+    destino = destino.strip()
+
+    if not texto or len(texto) > 3000:
+        raise HTTPException(
+            status_code=400,
+            detail="El texto debe tener entre 1 y 3000 caracteres"
+        )
+
+    if not origen or not destino:
+        raise HTTPException(
+            status_code=400,
+            detail="Selecciona ambos idiomas"
+        )
+
+    if origen == destino:
+        return {
+            "success": True,
+            "translated_text": texto,
+            "source_language": origen,
+            "target_language": destino
+        }
+
+    servicio = TranslationService()
+
+    try:
+        resultado = await servicio.translate(
+            text=texto,
+            source_language=origen,
+            target_language=destino
+        )
+
+        if not resultado.success:
+            raise HTTPException(
+                status_code=502,
+                detail=resultado.error or "Error de traduccion"
+            )
+
+        return {
+            "success": True,
+            "translated_text": resultado.text,
+            "source_language": origen,
+            "target_language": destino
+        }
+
+    finally:
+        await servicio.close()

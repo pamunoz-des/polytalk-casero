@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ t("app.title") }}</title>
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=localtalk-20261026">
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/animations.css">
     <link rel="stylesheet" href="/static/css/responsive.css">
+    <link rel="stylesheet" href="/static/css/polytalk-v2.css?v=20261026-localtalk">
     <script>
         window.POLYTALK_I18N = {
             locale: {{ ui_locale | tojson }},
@@ -21,7 +22,7 @@
     <div class="container">
         <header>
             <div class="logo-container">
-                <img src="/static/logo.png" alt="PolyTalk Logo" class="app-logo">
+                <img src="/static/localtalk-logo.png?v=20261026" alt="LocalTalk Logo" class="app-logo">
             </div>
             <p class="subtitle">Real time Live speech-to-speech translations</p>
         </header>
@@ -141,6 +142,17 @@
                 <span id="readiness-summary" class="readiness-summary">Ready</span>
             </section>
 
+            <section class="voice-output-control" style="display:flex;align-items:center;justify-content:center;gap:14px;margin:16px 0;">
+    <label for="tts-enabled-switch" style="font-weight:600;cursor:pointer;">
+        Generar salida de voz
+    </label>
+    <input type="checkbox"
+           id="tts-enabled-switch"
+           checked
+           aria-label="Generar salida de voz"
+           style="width:22px;height:22px;accent-color:#16a085;cursor:pointer;">
+    <span id="tts-output-status" aria-live="polite">Voz activada</span>
+</section>
             <section class="recording-controls" id="recording-controls">
                 <button id="live-btn" class="btn btn-live action-icon-btn" title="Live Translate (Microphone)" aria-label="Live Translate with microphone">
                     <span class="action-icon action-icon-mic" aria-hidden="true"></span>
@@ -172,9 +184,7 @@
                     <span></span>
                     <span></span>
                 </span>
-                <span class="listening-mic" aria-hidden="true">
-                    <span class="mic-base"></span>
-                </span>
+                <span class="action-icon action-icon-mic" aria-hidden="true"></span>
                 <span class="listening-wave-side listening-wave-right" aria-hidden="true">
                     <span></span>
                     <span></span>
@@ -206,7 +216,10 @@
             </div>
         </section>
 
-        <div id="settings-modal" class="settings-modal">
+        <!-- POLYTALK TEXT VOICE PANEL INCLUDE -->
+{% include "text_voice_panel.html" %}
+
+<div id="settings-modal" class="settings-modal">
             <div class="settings-content">
                 <div class="settings-header">
                     <h2>Settings</h2>
@@ -223,7 +236,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <p class="settings-note">Choose the language used for PolyTalk controls and messages.</p>
+                        <p class="settings-note">Choose the language used for LocalTalk controls and messages.</p>
                     </div>
                     <div class="settings-section">
                         <h3>Speech Recognition Engine</h3>
@@ -249,6 +262,78 @@
                             </select>
                         </div>
                         <p class="settings-note">Selecciona el motor de voz para la siguiente sesión de traducción. La disponibilidad depende del idioma.</p>
+                    </div>
+                    <div class="settings-section" id="voice-cloning-section">
+                        <h3>Mis voces / Clonación de voz</h3>
+
+                        <div class="settings-field">
+                            <label for="clone-voice-name">Nombre de la voz</label>
+                            <input type="text" id="clone-voice-name"
+                                   placeholder="Mi voz personal" maxlength="80">
+                        </div>
+
+                        <div class="settings-field">
+                            <label for="clone-voice-file">Muestra de audio</label>
+                            <input type="file" id="clone-voice-file"
+                                   accept="audio/*">
+                        </div>
+
+                        <div class="settings-field">
+                            <label>Grabación de voz</label>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button type="button" id="clone-record-start" class="btn">
+                                    Grabar voz
+                                </button>
+                                <button type="button" id="clone-record-stop"
+                                        class="btn" disabled>
+                                    Detener
+                                </button>
+                            </div>
+                        </div>
+
+                        <audio id="clone-audio-preview" controls
+                               style="display:none;width:100%;margin:10px 0;">
+                        </audio>
+
+                        <div class="settings-field">
+                            <label for="clone-voice-select">Mis voces guardadas</label>
+                            <select id="clone-voice-select">
+                                <option value="">Voz predeterminada</option>
+                            </select>
+                        </div>
+
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button type="button" id="clone-voice-create" class="btn">
+                                Crear voz
+                            </button>
+                            
+<div class="setting-group" id="clone-test-text-group">
+    <label for="clone-test-text">
+        Frase para probar la voz clonada
+    </label>
+    <textarea
+        id="clone-test-text"
+        rows="3"
+        maxlength="500"
+        placeholder="Escribe una frase para evaluar tu voz clonada..."
+        style="width:100%;box-sizing:border-box;resize:vertical;"
+    >Hola, soy Pato. Esta es una prueba de mi voz clonada en LocalTalk.</textarea>
+    <small>
+        Maximo 500 caracteres. Prueba distintas frases para evaluar
+        pronunciacion, naturalidad y similitud con tu voz.
+    </small>
+</div>
+
+<button type="button" id="clone-voice-test" class="btn">
+                                Probar voz
+                            </button>
+                        </div>
+
+                        <p class="settings-note" id="clone-voice-status"
+                           role="status" aria-live="polite">
+                            Utiliza solamente voces propias o autorizadas.
+                            Funcionalidad pendiente de conectar con OmniVoice.
+                        </p>
                     </div>
                     <div class="settings-section">
                         <h3>Audio Input Device</h3>
@@ -289,14 +374,16 @@
         </main>
 
         <footer>
-            <p>PolyTalk • Privacy-first Real-time Translation</p>
+            <p>LocalTalk • Privacy-first Real-time Translation</p>
             <p>&copy; 2026 <a href="https://www.bizzappdev.com?utm_source=polytalk-ce" target="_blank" rel="noopener noreferrer">BizzAppDev Systems Pvt. Ltd.</a> | <a href="https://github.com/PolyTalkIO/polytalk/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a> | <a href="https://github.com/PolyTalkIO/polytalk" target="_blank" rel="noopener noreferrer">Source</a></p>
         </footer>
     </div>
 
     <script src="/static/js/i18n.js"></script>
     <script src="/static/js/audio-recorder.js"></script>
-    <script src="/static/js/polytalk-app.js"></script>
+    <script src="/static/js/polytalk-app.js?v=20261020-638"></script>
     <script src="/static/js/main.js"></script>
+    <script src="/static/js/text-voice.js?v=1" defer></script>
 </body>
 </html>
+

@@ -186,3 +186,133 @@
     font-style: italic;
     white-space: nowrap;
 }
+
+/* PolyTalk 2.0 - Compact header */
+.container > header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 14px;
+    min-height: 56px;
+    margin-bottom: 12px;
+    padding: 4px 0;
+    text-align: left;
+}
+
+.container > header .logo-container {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.container > header .app-logo {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+}
+
+.container > header .subtitle {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    opacity: 0.8;
+}
+
+@media (max-width: 600px) {
+    .container > header {
+        gap: 10px;
+        min-height: 48px;
+        margin-bottom: 10px;
+        padding: 2px 0;
+    }
+
+    .container > header .app-logo {
+        width: 40px;
+        height: 40px;
+    }
+
+    .container > header .subtitle {
+        font-size: 0.75rem;
+        line-height: 1.25;
+    }
+}
+
+/* PolyTalk 2.0 - Minimal header without logo */
+.container > header {
+    min-height: 36px;
+    padding: 0;
+    margin-bottom: 10px;
+}
+
+.container > header .logo-container {
+    display: none;
+}
+
+.container > header .subtitle {
+    font-size: 0;
+    line-height: 1;
+    opacity: 1;
+}
+
+.container > header .subtitle::after {
+    content: "PolyTalk";
+    display: block;
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.4;
+    color: #ffffff;
+}
+
+@media (max-width: 600px) {
+    .container > header {
+        min-height: 32px;
+        margin-bottom: 8px;
+    }
+
+    .container > header .subtitle::after {
+        font-size: 1.15rem;
+    }
+}
+
+/* PolyTalk 2.0 - Compact translation panels */
+@media (min-width: 701px) {
+    .live-results {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 12px;
+        align-items: stretch;
+        margin-bottom: 12px;
+    }
+}
+
+.live-results .live-box {
+    min-width: 0;
+    padding: 14px;
+    border-radius: 12px;
+}
+
+.live-results .live-box h3 {
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+.live-results .live-content {
+    overflow-wrap: anywhere;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+    .live-results {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .live-results .live-box {
+        padding: 12px;
+    }
+}

@@ -21,6 +21,7 @@ class PolyTalkApp {
         this.liveTranscriptText = '';
         this.liveTranslationText = '';
         this.autoPlayAudio = true;
+        this.ttsEnabled = localStorage.getItem('polytalk_tts_enabled') !== 'false';
         this.ttsQueue = [];
         this.isPlayingTTS = false;
         this.currentTTSPreload = null;
@@ -101,6 +102,24 @@ class PolyTalkApp {
         this.translation = document.getElementById('translation');
         this.audioContainer = document.getElementById('audio-container');
         this.audioPlayer = document.getElementById('audio-player');
+        this.ttsEnabledSwitch = document.getElementById('tts-enabled-switch');
+        this.ttsOutputStatus = document.getElementById('tts-output-status');
+
+        if (this.ttsEnabledSwitch) {
+            this.ttsEnabledSwitch.checked = this.ttsEnabled;
+            this.ttsOutputStatus.textContent = this.ttsEnabled
+                ? 'Voz activada'
+                : 'Solo texto';
+
+            this.ttsEnabledSwitch.addEventListener('change', () => {
+                this.ttsEnabled = this.ttsEnabledSwitch.checked;
+                localStorage.setItem('polytalk_tts_enabled', String(this.ttsEnabled));
+
+                this.ttsOutputStatus.textContent = this.ttsEnabled
+                    ? 'Voz activada'
+                    : 'Solo texto';
+            });
+        }
         this.liveTranscript = document.getElementById('live-transcript');
         this.liveTranslation = document.getElementById('live-translation');
         this.readinessPanel = document.getElementById('readiness-panel');
@@ -399,9 +418,281 @@ class PolyTalkApp {
     /**
      * Open settings modal
      */
+
+    async createOmniVoiceProfile() {
+        const nameInput = document.getElementById('clone-voice-name');
+        const fileInput = document.getElementById('clone-voice-file');
+        const button = document.getElementById('clone-voice-create');
+        const status = document.getElementById('clone-voice-status');
+
+        const name = nameInput?.value.trim() || '';
+        const file = fileInput?.files?.[0];
+
+        if (!name) {
+            if (status) status.textContent = 'Ingresa un nombre para la voz.';
+            return;
+        }
+
+        if (!file) {
+            if (status) status.textContent = 'Selecciona un archivo de audio.';
+            return;
+        }
+
+        if (file.size > 20 * 1024 * 1024) {
+            if (status) status.textContent = 'El audio supera los 20 MB.';
+            return;
+        }
+
+        const allowed = ['wav', 'mp3', 'ogg', 'webm', 'm4a'];
+        const extension = file.name.split('.').pop().toLowerCase();
+
+        if (!allowed.includes(extension)) {
+            if (status) status.textContent = 'Formato de audio no permitido.';
+            return;
+        }
+
+        const data = new FormData();
+        data.append('name', name);
+        data.append('audio_file', file);
+
+        if (button) button.disabled = true;
+        if (status) status.textContent = 'Creando perfil de voz...';
+
+        try {
+            const response = await fetch('/api/voices/custom/create', {
+                method: 'POST',
+                body: data
+            });
+
+            if (!response.ok) {
+                let detail = `HTTP ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    detail = errorData.detail || detail;
+                } catch (_) {}
+                throw new Error(detail);
+            }
+
+            const result = await response.json();
+            console.log('OmniVoice profile created:', result);
+
+            await this.loadOmniVoiceProfiles();
+
+            if (status) {
+                status.textContent = 'Perfil de voz creado correctamente.';
+            }
+
+            if (fileInput) fileInput.value = '';
+
+        } catch (error) {
+            console.error('Voice creation failed:', error);
+
+            if (status) {
+                status.textContent = `Error al crear voz: ${error.message}`;
+            }
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async loadOmniVoiceProfiles() {
+        const select = document.getElementById('clone-voice-select');
+        const status = document.getElementById('clone-voice-status');
+
+        if (!select) return;
+
+        const selectedVoice = select.value;
+
+        try {
+            const response = await fetch('/api/voices/my-list', {
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+            const voices = Array.isArray(result)
+                ? result
+                : (Array.isArray(result.voices) ? result.voices : []);
+
+            select.replaceChildren(new Option('Voz predeterminada', ''));
+
+            for (const voice of voices) {
+                const voiceId = voice.voice_id ?? voice.id;
+                if (voiceId === undefined || voiceId === null) continue;
+
+                const voiceName = voice.name
+                    ?? voice.display_name
+                    ?? String(voiceId);
+
+                select.add(new Option(
+                    String(voiceName),
+                    String(voiceId)
+                ));
+            }
+
+            if (Array.from(select.options).some(
+                option => option.value === selectedVoice
+            )) {
+                select.value = selectedVoice;
+            }
+
+            if (status) {
+                status.textContent = voices.length
+                    ? `${voices.length} voz(es) disponible(s).`
+                    : 'Todav?a no hay voces guardadas en OmniVoice.';
+            }
+        } catch (error) {
+            console.error('Error loading OmniVoice profiles:', error);
+
+            if (status) {
+                status.textContent =
+                    'No se pudo consultar OmniVoice. Intenta nuevamente.';
+            }
+        }
+
+        const voiceSelect = document.getElementById('clone-voice-select');
+
+        if (voiceSelect) {
+            const savedVoiceId =
+                localStorage.getItem('polytalk_omnivoice_voice_id');
+
+            if (savedVoiceId) {
+                const exists = Array.from(voiceSelect.options)
+                    .some(option => option.value === savedVoiceId);
+
+                if (exists) {
+                    voiceSelect.value = savedVoiceId;
+                }
+            }
+
+            voiceSelect.onchange = () => {
+                localStorage.setItem(
+                    'polytalk_omnivoice_voice_id',
+                    voiceSelect.value
+                );
+            };
+
+            if (voiceSelect.value) {
+                localStorage.setItem(
+                    'polytalk_omnivoice_voice_id',
+                    voiceSelect.value
+                );
+            }
+        }
+    }
+
+
+    async testOmniVoiceProfile() {
+        const select = document.getElementById('clone-voice-select');
+        const button = document.getElementById('clone-voice-test');
+        const status = document.getElementById('clone-voice-status');
+        const player = document.getElementById('clone-audio-preview');
+
+        const voiceId = select?.value || '';
+
+        if (!voiceId) {
+            if (status) status.textContent = 'Selecciona una voz guardada.';
+            return;
+        }
+
+        const textInput = document.getElementById('clone-test-text');
+        const text = textInput?.value.trim() || '';
+
+        if (!text) {
+            if (status) {
+                status.textContent = 'Escribe una frase para probar la voz.';
+            }
+            return;
+        }
+
+        if (text.length > 500) {
+            if (status) {
+                status.textContent = 'La frase no puede superar los 500 caracteres.';
+            }
+            return;
+        }
+
+        if (button) button.disabled = true;
+        if (status) status.textContent = 'Generando audio con OmniVoice...';
+
+        try {
+            const response = await fetch('/api/voices/synthesize', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    text: text,
+                    voice_id: voiceId
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(
+                    result.detail || 'No fue posible generar el audio.'
+                );
+            }
+
+            if (!result.audio_url || !player) {
+                throw new Error('No se encontro el reproductor de audio.');
+            }
+
+            if (!/^\/api\/audio\/[A-Za-z0-9_-]+\.wav$/.test(result.audio_url)) {
+                throw new Error('La URL del audio no es valida.');
+            }
+
+            player.pause();
+            player.src = result.audio_url;
+            player.style.display = 'block';
+            player.load();
+
+            if (status) {
+                status.textContent = 'Audio generado. Reproduciendo prueba de voz...';
+            }
+
+            try {
+                await player.play();
+            } catch (playError) {
+                if (status) {
+                    status.textContent = 'Audio listo. Presiona Play para escucharlo.';
+                }
+            }
+
+        } catch (error) {
+            if (status) {
+                status.textContent = 'Error: ' + error.message;
+            }
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     async openSettings() {
         if (this.settingsModal) {
             this.settingsModal.classList.add('active');
+
+            const cloneCreateButton = document.getElementById('clone-voice-create');
+            if (cloneCreateButton && !cloneCreateButton.dataset.voiceCreateBound) {
+                cloneCreateButton.addEventListener('click', () => {
+                    void this.createOmniVoiceProfile();
+                });
+                cloneCreateButton.dataset.voiceCreateBound = 'true';
+            }
+
+            const cloneTestButton = document.getElementById('clone-voice-test');
+            if (cloneTestButton && !cloneTestButton.dataset.voiceTestBound) {
+                cloneTestButton.addEventListener('click', () => {
+                    void this.testOmniVoiceProfile();
+                });
+                cloneTestButton.dataset.voiceTestBound = 'true';
+            }
+
+            void this.loadOmniVoiceProfiles();
 
             // Request microphone permission first to ensure all devices are visible
             const hasPermission = await this.audioRecorder.requestPermission();
@@ -577,10 +868,21 @@ class PolyTalkApp {
         });
         const sttEngine = document.getElementById('stt-engine-select')?.value === 'parakeet'
             ? 'parakeet'
-            : 'parakeet';
+            : 'whisper';
         params.set('stt_engine', sttEngine);
         const ttsEngine = localStorage.getItem('polytalk_tts_engine') || 'xtts';
         params.set('tts_engine', ttsEngine);
+
+        if (ttsEngine === 'omnivoice') {
+            const selectedVoiceId =
+                localStorage.getItem('polytalk_omnivoice_voice_id');
+
+            if (selectedVoiceId) {
+                params.set('voice_id', selectedVoiceId);
+            }
+        }
+
+        params.set('tts_enabled', String(this.ttsEnabled));
 
         const customInstruction = this.getCustomInstruction();
         if (customInstruction) {

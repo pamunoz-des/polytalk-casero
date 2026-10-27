@@ -1,0 +1,95 @@
+﻿ 219:         <div id="settings-modal" class="settings-modal">
+ 220:             <div class="settings-content">
+ 221:                 <div class="settings-header">
+ 222:                     <h2>Settings</h2>
+ 223:                     <button id="close-settings-btn" class="close-settings">&times;</button>
+ 224:                 </div>
+ 225:                 <div class="settings-body">
+ 226:                     <div class="settings-section">
+ 227:                         <h3>UI Language</h3>
+ 228:                         <div class="settings-field">
+ 229:                             <label for="ui-locale-select">Interface Language</label>
+ 230:                             <select id="ui-locale-select" data-ui-locale-switcher>
+ 231:                                 {% for option in ui_locale_options %}
+ 232:                                 <option value="{{ option.code }}" data-search-label="{{ option.label }}"{% if option.code == ui_locale %} selected{% endif %}>{{ option.label }}</option>
+ 233:                                 {% endfor %}
+ 234:                             </select>
+ 235:                         </div>
+ 236:                         <p class="settings-note">Choose the language used for PolyTalk controls and messages.</p>
+ 237:                     </div>
+ 238:                     <div class="settings-section">
+ 239:                         <h3>Speech Recognition Engine</h3>
+ 240:                         <div class="settings-field">
+ 241:                             <label for="stt-engine-select">Motor de reconocimiento de voz</label>
+ 242:                             <select id="stt-engine-select">
+ 243:                                 <option value="whisper">Faster-Whisper (CPU)</option>
+ 244:                                 <option value="parakeet" selected>NVIDIA Parakeet v3 (GPU)</option>
+ 245:                             </select>
+ 246:                         </div>
+ 247:                         <p class="settings-note">Selecciona el motor STT para la siguiente sesiÃ³n de traducciÃ³n.</p>
+ 248:                     </div>
+ 249:                                         <div class="settings-section">
+ 250:                         <h3>Speech Synthesis Engine</h3>
+ 251:                         <div class="settings-field">
+ 252:                             <label for="tts-engine-select">Motor de sÃ­ntesis de voz (TTS)</label>
+ 253:                             <select id="tts-engine-select">
+ 254:                                 <option value="auto">AutomÃ¡tico (segÃºn idioma)</option>
+ 255:                                 <option value="xtts" selected>XTTS (voz clonada)</option>
+ 256:                                 <option value="omnivoice">OmniVoice PRO</option>
+ 257:                                 <option value="supertonic">Supertonic</option>
+ 258:                                 <option value="piper">Piper</option>
+ 259:                             </select>
+ 260:                         </div>
+ 261:                         <p class="settings-note">Selecciona el motor de voz para la siguiente sesiÃ³n de traducciÃ³n. La disponibilidad depende del idioma.</p>
+ 262:                     </div>
+ 263:                     <div class="settings-section">
+ 264:                         <h3>Audio Input Device</h3>
+ 265:                         <div class="settings-field">
+ 266:                             <label for="input-device-select">Microphone</label>
+ 267:                             <select id="input-device-select">
+ 268:                             </select>
+ 269:                         </div>
+ 270:                         <p class="settings-note">Select the microphone you want to use for speaking.</p>
+ 271:                     </div>
+ 272:                     <div class="settings-section">
+ 273:                         <h3>Audio Output Device</h3>
+ 274:                         <div class="settings-field">
+ 275:                             <label for="output-device-select">Speaker/Headphones</label>
+ 276:                             <select id="output-device-select">
+ 277:                             </select>
+ 278:                         </div>
+ 279:                         <p class="settings-note">Select the device where you want to hear the translated audio.</p>
+ 280:                     </div>
+ 281:                     <div class="settings-section">
+ 282:                         <h3>AI Behavior</h3>
+ 283:                         <div class="settings-field">
+ 284:                             <label for="custom-instruction-input">Translation Instructions</label>
+ 285:                             <textarea id="custom-instruction-input" rows="4" maxlength="{{ custom_instruction_max_chars }}" aria-describedby="custom-instruction-count" placeholder="Translate formally. Keep technical terms in English."></textarea>
+ 286:                             <div class="settings-char-count" id="custom-instruction-count" aria-live="polite">0/{{ custom_instruction_max_chars }}</div>
+ 287:                         </div>
+ 288:                         <p class="settings-note">Optional guidance sent with live, conversation, and tab-audio translation sessions.</p>
+ 289:                     </div>
+ 290:                 </div>
+ 291:                 <div class="settings-footer">
+ 292:                     <button id="save-settings-btn" class="btn btn-save">
+ 293:                         <span class="btn-text">Save & Close</span>
+ 294:                     </button>
+ 295:                 </div>
+ 296:             </div>
+ 297:         </div>
+ 298: 
+ 299:         </main>
+ 300: 
+ 301:         <footer>
+ 302:             <p>PolyTalk â€¢ Privacy-first Real-time Translation</p>
+ 303:             <p>&copy; 2026 <a href="https://www.bizzappdev.com?utm_source=polytalk-ce" target="_blank" rel="noopener noreferrer">BizzAppDev Systems Pvt. Ltd.</a> | <a href="https://github.com/PolyTalkIO/polytalk/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a> | <a href="https://github.com/PolyTalkIO/polytalk" target="_blank" rel="noopener noreferrer">Source</a></p>
+ 304:         </footer>
+ 305:     </div>
+ 306: 
+ 307:     <script src="/static/js/i18n.js"></script>
+ 308:     <script src="/static/js/audio-recorder.js"></script>
+ 309:     <script src="/static/js/polytalk-app.js"></script>
+ 310:     <script src="/static/js/main.js"></script>
+ 311: </body>
+ 312: </html>
+ 313: 

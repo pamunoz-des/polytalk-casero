@@ -1,0 +1,122 @@
+<!-- POLYTALK TEXT TO VOICE V2 -->
+<section id="text-voice-panel" class="tv-panel"
+         aria-labelledby="tv-title">
+
+    <div class="tv-card">
+
+        <header class="tv-header">
+            <div>
+                <h2 id="tv-title">Texto → Traducción → Voz</h2>
+                <p>Traduce textos y escúchalos utilizando OmniVoice PRO.</p>
+            </div>
+            <span class="tv-version">TEXT TO SPEECH</span>
+        </header>
+
+        <section class="live-results tv-live-results">
+
+    <div class="live-box transcript-box">
+        <h3>Texto original</h3>
+        <textarea
+            id="tv-source-text"
+            class="live-content tv-live-textarea"
+            rows="7"
+            maxlength="3000"
+            placeholder="Escribe aquí el texto que deseas traducir..."></textarea>
+    </div>
+
+    <div class="live-box translation-box">
+        <h3>Texto traducido</h3>
+        <textarea
+            id="tv-translated-text"
+            class="live-content tv-live-textarea"
+            rows="7"
+            maxlength="3000"
+            placeholder="La traducción aparecerá aquí. También puedes editarla."></textarea>
+    </div>
+
+</section>
+<div class="tv-controls">
+
+            <div class="tv-field">
+                <label for="tv-source-lang">Idioma original</label>
+                <select id="tv-source-lang" class="tv-config-select">
+    <option value="cs" data-search-label="Čeština">Čeština</option>
+    <option value="da" data-search-label="Dansk">Dansk</option>
+    <option value="de" data-search-label="Deutsch">Deutsch</option>
+    <option value="en" data-search-label="Inglés">Inglés</option>
+    <option value="es" data-search-label="Español" selected>Español</option>
+    <option value="fi" data-search-label="Suomi">Suomi</option>
+    <option value="fr" data-search-label="Français">Français</option>
+    <option value="it" data-search-label="Italiano">Italiano</option>
+    <option value="nl" data-search-label="Nederlands">Nederlands</option>
+    <option value="pl" data-search-label="Polski">Polski</option>
+    <option value="pt" data-search-label="Português">Português</option>
+    <option value="ro" data-search-label="Română">Română</option>
+    <option value="sv" data-search-label="Svenska">Svenska</option>
+</select>
+            </div>
+
+            <div class="tv-field">
+                <label for="tv-target-lang">Idioma destino</label>
+                <select id="tv-target-lang" class="tv-config-select">
+    <option value="cs" data-search-label="Čeština">Čeština</option>
+    <option value="da" data-search-label="Dansk">Dansk</option>
+    <option value="de" data-search-label="Deutsch">Deutsch</option>
+    <option value="en" data-search-label="Inglés" selected>Inglés</option>
+    <option value="es" data-search-label="Español">Español</option>
+    <option value="fi" data-search-label="Suomi">Suomi</option>
+    <option value="fr" data-search-label="Français">Français</option>
+    <option value="it" data-search-label="Italiano">Italiano</option>
+    <option value="nl" data-search-label="Nederlands">Nederlands</option>
+    <option value="pl" data-search-label="Polski">Polski</option>
+    <option value="pt" data-search-label="Português">Português</option>
+    <option value="ro" data-search-label="Română">Română</option>
+    <option value="sv" data-search-label="Svenska">Svenska</option>
+</select>
+            </div>
+
+            <div class="tv-field">
+                <label for="tv-voice-select">Voz de salida</label>
+                <select id="tv-voice-select" class="tv-config-select">
+                    <option value="custom_32c63483">PatoTest</option>
+                </select>
+            </div>
+
+        </div>
+
+        <div class="tv-actions">
+            <button type="button"
+                    id="tv-translate-btn"
+                    class="btn">
+                Traducir texto
+            </button>
+
+            <button type="button"
+                    id="tv-generate-btn"
+                    class="btn">
+                Generar voz
+            </button>
+        </div>
+
+        <div class="tv-footer">
+            <p id="tv-status" class="tv-status"
+               role="status" aria-live="polite">
+                Listo para traducir.
+            </p>
+
+            <div class="tv-audio-box">
+                <audio id="tv-audio-player"
+                       controls
+                       style="display:none;"></audio>
+
+                <a id="tv-download-btn"
+                   href="#"
+                   download="polytalk-traduccion.wav"
+                   style="display:none;">
+                    Descargar audio
+                </a>
+            </div>
+        </div>
+
+    </div>
+</section>

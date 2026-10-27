@@ -71,7 +71,7 @@ class TTSService(BaseTTSService):
         )
 
     async def synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None, voice_id: Optional[str] = None
     ) -> TTSResult:
         """
         Synthesize speech from text.
@@ -107,7 +107,7 @@ class TTSService(BaseTTSService):
             if provider == "xtts":
                 return await self._xtts_synthesize(text, language, output_path)
             if provider == "omnivoice":
-                return await self._omnivoice_synthesize(text, language, output_path)
+                return await self._omnivoice_synthesize(text, language, output_path, voice_id=voice_id)
             return await self._openai_synthesize(text, language, output_path)
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
@@ -511,7 +511,7 @@ class TTSService(BaseTTSService):
             return TTSResult(success=False, error=f"XTTS HTTP error: {e}")
 
     async def _omnivoice_synthesize(
-        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None
+        self, text: str, language: str, output_path: Optional[Path] = None, provider_override: Optional[str] = None, voice_id: Optional[str] = None
     ) -> TTSResult:
         """Generate WAV audio using OmniVoice PRO."""
         _, lang_base = self._normalize_language(language)
@@ -526,31 +526,44 @@ class TTSService(BaseTTSService):
         }
 
         try:
-            ref_audio = Path("/app/voices/mi_voz_ref.wav")
-            ref_text_file = Path("/app/voices/mi_voz_ref.txt")
+            if voice_id:
+                import re
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", voice_id):
+                    raise ValueError("Invalid OmniVoice voice_id")
 
-            if not ref_audio.is_file() or not ref_text_file.is_file():
-                raise ValueError("OmniVoice voice reference files not found")
+                payload["voice_id"] = voice_id
 
-            ref_text = ref_text_file.read_text(encoding="utf-8").strip()
-            if not ref_text:
-                raise ValueError("OmniVoice reference transcription is empty")
-
-            payload["ref_text"] = ref_text
-
-            with ref_audio.open("rb") as voice_file:
                 response = await self._http_client.post(
                     base_url + "/api/synthesize",
                     data=payload,
-                    files={
-                        "ref_audio": (
-                            ref_audio.name,
-                            voice_file,
-                            "audio/wav",
-                        )
-                    },
                     timeout=120.0,
                 )
+            else:
+                ref_audio = Path("/app/voices/mi_voz_ref.wav")
+                ref_text_file = Path("/app/voices/mi_voz_ref.txt")
+
+                if not ref_audio.is_file() or not ref_text_file.is_file():
+                    raise ValueError("OmniVoice voice reference files not found")
+
+                ref_text = ref_text_file.read_text(encoding="utf-8").strip()
+                if not ref_text:
+                    raise ValueError("OmniVoice reference transcription is empty")
+
+                payload["ref_text"] = ref_text
+
+                with ref_audio.open("rb") as voice_file:
+                    response = await self._http_client.post(
+                        base_url + "/api/synthesize",
+                        data=payload,
+                        files={
+                            "ref_audio": (
+                                ref_audio.name,
+                                voice_file,
+                                "audio/wav",
+                            )
+                        },
+                        timeout=120.0,
+                    )
             response.raise_for_status()
             result = response.json()
 

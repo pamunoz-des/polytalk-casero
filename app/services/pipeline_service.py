@@ -157,7 +157,7 @@ class TranslationPipelineService:
         await self._warm_connections()
 
     async def _synthesize(
-        self, text: str, language: str, save_media: bool, tts_engine: str = "auto"
+        self, text: str, language: str, save_media: bool, tts_engine: str = "auto", voice_id: Optional[str] = None
     ) -> TTSResult:
         """
         Synthesize speech from text.
@@ -179,7 +179,7 @@ class TranslationPipelineService:
         else:
             output_path = None
 
-        return await self.tts.synthesize(text, language, output_path, provider_override=tts_engine)
+        return await self.tts.synthesize(text, language, output_path, provider_override=tts_engine, voice_id=voice_id)
 
     async def _warm_connections(self) -> None:
         """
@@ -320,6 +320,8 @@ class TranslationPipelineService:
         custom_instruction: Optional[str] = None,
         custom_instruction_queue: Optional[asyncio.Queue] = None,
         tts_engine: str = "auto",
+        tts_enabled: bool = True,
+        voice_id: Optional[str] = None,
     ) -> AsyncGenerator[dict, None]:
         """Process pause-delimited bidirectional conversation turns."""
         logger.info(
@@ -436,8 +438,11 @@ class TranslationPipelineService:
                     "translated_text": result.text,
                 }
 
+                if not tts_enabled:
+                    continue
+
                 tts_result = await self._synthesize(
-                    result.text, turn_target, save_media=False, tts_engine=tts_engine
+                    result.text, turn_target, save_media=False, tts_engine=tts_engine, voice_id=voice_id
                 )
                 if tts_result.success:
                     yield {
@@ -471,6 +476,8 @@ class TranslationPipelineService:
         custom_instruction: Optional[str] = None,
         custom_instruction_queue: Optional[asyncio.Queue] = None,
         tts_engine: str = "auto",
+        tts_enabled: bool = True,
+        voice_id: Optional[str] = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Process streaming audio with the real-time translation pipeline.
@@ -512,6 +519,8 @@ class TranslationPipelineService:
                 custom_instruction=custom_instruction,
                 custom_instruction_queue=custom_instruction_queue,
                 tts_engine=tts_engine,
+                tts_enabled=tts_enabled,
+                voice_id=voice_id,
             ):
                 yield result
             return
@@ -645,6 +654,10 @@ class TranslationPipelineService:
                         f"'{translated_sentence.text[:50]}...'"
                     )
 
+                    # Skip speech synthesis in text-only mode
+                    if not tts_enabled:
+                        continue
+
                     # Generate TTS
                     try:
                         tts_result = await self._synthesize(
@@ -652,6 +665,7 @@ class TranslationPipelineService:
                             target_lang,
                             save_media=False,
                             tts_engine=tts_engine,
+                            voice_id=voice_id,
                         )
 
                         if tts_result.success:
@@ -830,6 +844,9 @@ class TranslationPipelineService:
                     )
 
             async def enqueue_tts(text: str, sequence: int) -> None:
+                if not tts_enabled:
+                    return
+
                 await tts_queue.put(
                     TranslatedSentence(
                         text=text,
@@ -926,7 +943,8 @@ class TranslationPipelineService:
                             "Translation worker: ASR done, finishing translations"
                         )
                         await flush_translation_buffer("asr done")
-                        await tts_queue.put(None)
+                        if tts_enabled:
+                            await tts_queue.put(None)
                         break
 
                     if msg["type"] == "error":
@@ -1163,7 +1181,7 @@ class TranslationPipelineService:
         # Start worker tasks
         asr_task = asyncio.create_task(asr_worker())
         translation_task = asyncio.create_task(translation_worker())
-        tts_task = asyncio.create_task(tts_worker())
+        tts_task = asyncio.create_task(tts_worker()) if tts_enabled else None
 
         try:
             # Consume results from worker tasks
@@ -1213,17 +1231,18 @@ class TranslationPipelineService:
             except asyncio.CancelledError:
                 pass
 
-            # Wait for TTS to drain queue (max 5 seconds)
-            try:
-                await asyncio.wait_for(tts_task, timeout=5.0)
-                logger.info("TTS worker drained queue successfully")
-            except asyncio.TimeoutError:
-                logger.warning("TTS worker timeout, cancelling")
-                tts_task.cancel()
+            if tts_task is not None:
+                # Wait for TTS to drain queue (max 5 seconds)
                 try:
-                    await tts_task
-                except asyncio.CancelledError:
-                    pass
+                    await asyncio.wait_for(tts_task, timeout=5.0)
+                    logger.info("TTS worker drained queue successfully")
+                except asyncio.TimeoutError:
+                    logger.warning("TTS worker timeout, cancelling")
+                    tts_task.cancel()
+                    try:
+                        await tts_task
+                    except asyncio.CancelledError:
+                        pass
 
             raise
         except Exception as e:
@@ -1243,16 +1262,17 @@ class TranslationPipelineService:
             except asyncio.CancelledError:
                 pass
 
-            # Wait for TTS to drain queue (max 5 seconds)
-            try:
-                await asyncio.wait_for(tts_task, timeout=5.0)
-                logger.info("TTS worker drained queue successfully")
-            except asyncio.TimeoutError:
-                logger.warning("TTS worker timeout, cancelling")
-                tts_task.cancel()
+            if tts_task is not None:
+                # Wait for TTS to drain queue (max 5 seconds)
                 try:
-                    await tts_task
-                except asyncio.CancelledError:
-                    pass
+                    await asyncio.wait_for(tts_task, timeout=5.0)
+                    logger.info("TTS worker drained queue successfully")
+                except asyncio.TimeoutError:
+                    logger.warning("TTS worker timeout, cancelling")
+                    tts_task.cancel()
+                    try:
+                        await tts_task
+                    except asyncio.CancelledError:
+                        pass
 
             yield {"type": "error", "error": str(e), "success": False}
